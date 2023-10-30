@@ -1,0 +1,205 @@
+int findPredecessor(Node* x, int i) {
+    // Esta função encontra a chave predecessora (a maior chave) na subárvore à esquerda de x->C[i].
+    Node* current = x->C[i];
+    while (!current->leaf) {
+        current = current->C[current->n];
+    }
+    return current->keys[current->n - 1];
+}
+
+void borrowFromLeftSibling(Node* x, int i) {
+    // Esta função move uma chave do filho i-1 de x para o filho i de x.
+    Node* child1 = x->C[i - 1];
+    Node* child2 = x->C[i];
+
+    // Desloca todas as chaves em child2 para a direita.
+    for (int j = child2->n - 1; j >= 0; j--) {
+        child2->keys[j + 1] = child2->keys[j];
+    }
+
+    // Move a chave i-1 de x para child2.
+    child2->keys[0] = x->keys[i - 1];
+
+    if (!child1->leaf) {
+        // Se os filhos não são folhas, mova os ponteiros também.
+        for (int j = child2->n; j >= 0; j--) {
+            child2->C[j + 1] = child2->C[j];
+        }
+        child2->C[0] = child1->C[child1->n];
+    }
+
+    // Atualiza as contagens de chaves em child1 e child2.
+    child2->n++;
+    x->keys[i - 1] = child1->keys[child1->n - 1];
+    child1->n--;
+}
+
+void borrowFromRightSibling(Node* x, int i) {
+    // Esta função move uma chave do filho i+1 de x para o filho i de x.
+    Node* child1 = x->C[i];
+    Node* child2 = x->C[i + 1];
+
+    // Move a chave i de x para child1.
+    child1->keys[child1->n] = x->keys[i];
+
+    if (!child2->leaf) {
+        // Se os filhos não são folhas, mova os ponteiros também.
+        child1->C[child1->n + 1] = child2->C[0];
+    }
+
+    // Move a primeira chave de child2 para x.
+    x->keys[i] = child2->keys[0];
+
+    // Desloca todas as chaves em child2 para a esquerda.
+    for (int j = 0; j < child2->n - 1; j++) {
+        child2->keys[j] = child2->keys[j + 1];
+    }
+
+    if (!child2->leaf) {
+        // Se os filhos não são folhas, mova os ponteiros também.
+        for (int j = 0; j < child2->n; j++) {
+            child2->C[j] = child2->C[j + 1];
+        }
+    }
+
+    // Atualiza as contagens de chaves em child1 e child2.
+    child1->n++;
+    child2->n--;
+}
+
+void mergeChild(Node* x, int i) {
+    // Esta função mescla o filho i com o filho i+1 de x.
+    Node* child1 = x->C[i];
+    Node* child2 = x->C[i + 1];
+
+    // Move a chave i-ésima de x para o filho1.
+    child1->keys[child1->n] = x->keys[i];
+
+    // Copia as chaves do filho2 para o filho1.
+    for (int j = 0; j < child2->n; j++) {
+        child1->keys[j + child1->n + 1] = child2->keys[j];
+    }
+
+    // Se os filhos não são folhas, copie os ponteiros também.
+    if (!child1->leaf) {
+        for (int j = 0; j <= child2->n; j++) {
+            child1->C[j + child1->n + 1] = child2->C[j];
+        }
+    }
+
+    // Atualiza a contagem de chaves no filho1.
+    child1->n += child2->n + 1;
+
+    // Desloca as chaves restantes em x após a posição i.
+    for (int j = i; j < x->n - 1; j++) {
+        x->keys[j] = x->keys[j + 1];
+    }
+
+    // Desloca os ponteiros de x após a posição i.
+    for (int j = i + 1; j < x->n; j++) {
+        x->C[j] = x->C[j + 1];
+    }
+
+    // Reduz a contagem de chaves em x.
+    x->n--;
+
+    // Libere a memória alocada para o filho2.
+    free(child2->keys);
+    free(child2->C);
+    free(child2);
+}
+
+void deleteKey(Node* x, int k) {
+    int i = 0;
+    while (i < x->n && k > x->keys[i]) {
+        i++;
+    }
+
+    if (i < x->n && k == x->keys[i]) {
+        // Caso 1: A chave k está na página x.
+        if (x->leaf) {
+            // Se x é uma folha, simplesmente remova a chave k.
+            for (int j = i; j < x->n - 1; j++) {
+                x->keys[j] = x->keys[j + 1];
+            }
+            x->n--;
+        } else {
+            // Caso 2: A chave k está em um nó interno.
+            // Substitua k pela chave predecessor em x e delete o predecessor no filho correspondente.
+            int predecessorKey = findPredecessor(x, i);
+            x->keys[i] = predecessorKey;
+            deleteKey(x->C[i], predecessorKey);
+        }
+    } else {
+        // Caso 3: A chave k não está presente em x.
+        if (x->leaf) {
+            // A chave k não está na árvore.
+            return;
+        }
+        // Determine o filho onde k pode estar.
+        Node* child = x->C[i];
+        if (child->n >= x->t) {
+            // Caso 3a: O filho contém pelo menos t chaves. Recursivamente delete k no filho.
+            deleteKey(child, k);
+        } else {
+            // Caso 3b: O filho contém menos de t chaves.
+            // Verifique os filhos adjacentes para possível redistribuição.
+            if (i > 0 && x->C[i - 1]->n >= x->t) {
+                // Caso 3b (i): O filho à esquerda (C[i-1]) contém pelo menos t chaves. Redistribuição.
+                borrowFromLeftSibling(x, i);
+            } else if (i < x->n && x->C[i + 1]->n >= x->t) {
+                // Caso 3b (ii): O filho à direita (C[i+1]) contém pelo menos t chaves. Redistribuição.
+                borrowFromRightSibling(x, i);
+            } else {
+                // Caso 3b (iii): Ambos os filhos adjacentes contêm t-1 chaves. Fusão.
+                mergeChild(x, i);
+                // O mergeChild fundirá o filho e a chave i para o filho da esquerda.
+                // Agora, basta deletar k do filho da esquerda.
+                deleteKey(child, k);
+            }
+        }
+    }
+}
+
+void delete(Node** root, int k) {
+    Node* r = *root;
+
+    if (r == NULL) {
+        return;
+    }
+
+    deleteKey(r, k);
+
+    // Caso especial: Se a raiz se tornar vazia após a remoção, atualize a raiz.
+    if (r->n == 0) {
+        Node* newRoot = r->C[0];
+        free(r->keys);
+        free(r->C);
+        free(r);
+        *root = newRoot;
+    }
+}
+
+int main() {
+   Node *root=NULL;
+   insert(&root,10,3);
+   insert(&root,20,3);
+   insert(&root,30,3);
+   insert(&root,40,3);
+   insert(&root,50,3);
+   insert(&root,60,3);
+
+    // Imprimir a árvore antes da deleção.
+    printf("Arvore antes da delecao:\n");
+    printTree(root, 0);
+
+    // Deletar uma chave da árvore B.
+    int keyToDelete = 40;
+    delete(&root, keyToDelete);
+
+    // Imprimir a árvore após a deleção.
+    printf("\nArvore apos a delecao da chave %d:\n", keyToDelete);
+    printTree(root, 0);
+
+   return 0;
+}
